@@ -71,7 +71,7 @@ setup(
     author_email = "tomer.chachamu@gmail.com",
     url = "https://github.com/r3m0t/backports.lzma",
     license='3-clause BSD License',
-    keywords = "xy lzma compression decompression cffi ffi",
+    keywords = "xz lzma compression decompression cffi ffi",
     long_description = long_descr,
     install_requires=['cffi>=0.6'],
     classifiers = [

@@ -624,16 +624,14 @@ def LZMAFile(filename, mode="r",
     should have an entry for "id" indicating ID of the filter, plus
     additional entries for options to the filter.
     """
-    if isinstance(filename, (str, bytes)):
+    if hasattr(filename, "read") or hasattr(filename, "write"):
+        fp = filename
+        close_fp = False
+    else:
         if "b" not in mode:
             mode += "b"
         fp = io.open(filename, mode)
         close_fp = True
-    elif hasattr(filename, "read") or hasattr(filename, "write"):
-        fp = filename
-        close_fp = False
-    else:
-        raise TypeError("filename must be a str or bytes object, or a file")
 
     if 'r' in mode and seek and fp.seekable():
         if format is None:
