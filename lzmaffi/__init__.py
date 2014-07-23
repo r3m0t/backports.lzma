@@ -36,7 +36,7 @@ _MODE_READ     = 1
 _MODE_READ_EOF = 2
 _MODE_WRITE    = 3
 
-__version__ = "0.2.1"
+__version__ = "0.2.2"
 
 def memoryview_tobytes(buffer):
     return buffer.tobytes() if isinstance(buffer, memoryview) else buffer
