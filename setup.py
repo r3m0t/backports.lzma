@@ -74,6 +74,7 @@ setup(
     keywords = "xz lzma compression decompression cffi ffi",
     long_description = long_descr,
     install_requires=['cffi>=0.6'],
+    zip_safe=False,
     classifiers = [
         'Development Status :: 5 - Production/Stable',
         'Programming Language :: Python',
