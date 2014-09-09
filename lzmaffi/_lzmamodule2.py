@@ -270,11 +270,14 @@ int lzma_lzma_preset(lzma_options_lzma* options, uint32_t preset);
 void _pylzma_stream_init(lzma_stream *strm);
 void _pylzma_block_header_size_decode(uint32_t b);
 
-void free(void* ptr);
+void *malloc(size_t size);
+void free(void *ptr);
+void *realloc(void *ptr, size_t size);
 """)
 
 m = ffi.verify("""
 #include <lzma.h>
+#include <stdlib.h>
 void _pylzma_stream_init(lzma_stream *strm) {
     lzma_stream tmp = LZMA_STREAM_INIT; // macro from lzma.h
     *strm = tmp;
@@ -676,6 +679,7 @@ class LZMADecompressor(object):
         self.unused_data = b''
         self.eof = False
         self.lzs = _new_lzma_stream()
+        self._bufsiz = max(8192, io.DEFAULT_BUFFER_SIZE)
 
         if format == FORMAT_AUTO:
             catch_lzma_error(m.lzma_auto_decoder, self.lzs, memlimit, decoder_flags)
@@ -721,45 +725,61 @@ class LZMADecompressor(object):
             return self._decompress(data)
 
     def _decompress(self, data):
-        BUFSIZ = io.DEFAULT_BUFFER_SIZE
-
         lzs = self.lzs
 
-        lzs.next_in = in_ = ffi.new('char[]', to_bytes(data))
+        # we need in_ so that lzs.next_in doesn't get garbage collected until
+        # in_ goes out of scope
+        data = to_bytes(data)
+        lzs.next_in = in_ = ffi.new('char[]', data)
         lzs.avail_in = len(data)
-        outs = [ffi.new('char[]', BUFSIZ)]
-        lzs.next_out, = outs
-        lzs.avail_out = BUFSIZ
 
-        # siz := len(outs[-1])
-        siz = BUFSIZ
+        bufsiz = self._bufsiz
 
-        while True:
-            next_out_pos = int(ffi.cast('intptr_t', lzs.next_out))
-            ret = catch_lzma_error(m.lzma_code, lzs, m.LZMA_RUN)
-            data_size = int(ffi.cast('intptr_t', lzs.next_out)) - next_out_pos
-            if ret in (m.LZMA_NO_CHECK, m.LZMA_GET_CHECK):
-                self.check = m.lzma_get_check(lzs)
-            if ret == m.LZMA_STREAM_END:
-                self.eof = True
-                if lzs.avail_in > 0:
-                    self.unused_data = ffi.buffer(lzs.next_in, lzs.avail_in)[:]
-                break
-            elif lzs.avail_in == 0:
-                # it ate everything
-                break
-            elif lzs.avail_out == 0:
-                # ran out of space in the output buffer
-                #siz = (BUFSIZ << 1) + 6
-                siz = 512
-                outs.append(ffi.new('char[]', siz))
-                lzs.next_out = outs[-1]
-                lzs.avail_out = siz
-        last_out = outs.pop()
-        last_out_len = siz - lzs.avail_out
-        last_out_piece = ffi.buffer(last_out[0:last_out_len], last_out_len)[:]
+        lzs.next_out = orig_out = m.malloc(bufsiz)
+        if orig_out == ffi.NULL:
+            raise MemoryError
 
-        return b''.join(ffi.buffer(nn)[:] for nn in outs) + last_out_piece
+        lzs.avail_out = bufsiz
+
+        data_size = 0
+
+        try:
+            while True:
+                ret = catch_lzma_error(m.lzma_code, lzs, m.LZMA_RUN)
+                data_size = int(ffi.cast('uintptr_t', lzs.next_out)) - int(ffi.cast('uintptr_t', orig_out))
+                # data_size is the amount lzma_code has already outputted
+
+                if ret in (m.LZMA_NO_CHECK, m.LZMA_GET_CHECK):
+                    self.check = m.lzma_get_check(lzs)
+
+                if ret == m.LZMA_STREAM_END:
+                    self.eof = True
+                    if lzs.avail_in > 0:
+                        self.unused_data = ffi.buffer(lzs.next_in, lzs.avail_in)[:]
+                    break
+                elif lzs.avail_in == 0:
+                    # it ate everything
+                    break
+                elif lzs.avail_out == 0:
+                    # ran out of space in the output buffer, let's grow it
+                    bufsiz += (bufsiz >> 3) + 6
+                    next_out = m.realloc(orig_out, bufsiz)
+                    if next_out == ffi.NULL:
+                        # realloc unsuccessful
+                        m.free(orig_out)
+                        orig_out = ffi.NULL
+                        raise MemoryError
+
+                    orig_out = next_out
+
+                    lzs.next_out = orig_out + data_size
+                    lzs.avail_out = bufsiz - data_size
+
+            result = ffi.buffer(orig_out, data_size)[:]
+        finally:
+            m.free(orig_out)
+
+        return result
 
 class LZMACompressor(object):
     """
@@ -845,6 +865,7 @@ class LZMACompressor(object):
             return self._compress(data)
 
     def _compress(self, data, action=m.LZMA_RUN):
+        # TODO use realloc like in LZMADecompressor
         BUFSIZ = 8192
 
         lzs = self.lzs
