@@ -1,6 +1,10 @@
-A port of https://github.com/peterjc/backports.lzma to cffi, which adds seeking support. You must compress your xz files with the `--block-size` option for `lzmaffi` to efficiently seek through them.
+[![PyPI version](https://badge.fury.io/py/lzmaffi.svg)](https://badge.fury.io/py/lzmaffi) [![Build Status](https://secure.travis-ci.org/r3m0t/backports.lzma.png?branch=cffi)](https://travis-ci.org/r3m0t/backports.lzma)
 
-Example:
+A port of https://github.com/peterjc/backports.lzma to cffi, which adds seeking support. If you compress your xz files with the `--block-size` option, you can use `lzmaffi` to efficiently seek through them.
+
+This project [was forked by PyPy and bundled with PyPy3](https://bitbucket.org/pypy/pypy/src/45f61802dc1c1ad2e75fef6c1042786deea03fd4/lib_pypy/_lzma.py?fileviewer=file-view-default), please report issues with the PyPy version to [their issue tracker](https://bitbucket.org/pypy/pypy/issues).
+
+## Example
 
 ```py
 import lzmaffi
@@ -8,7 +12,8 @@ import io
 
 f = lzmaffi.open('log.xz', mode='rb')
 
-# f has all the usual file object methods like io.open
+# f has all the usual file object methods, like if you had used io.open
+# It also has a block_boundaries property
 
 for offset in f.block_boundaries:
 	f.seek(offset)
@@ -42,5 +47,3 @@ Tomers-MacBook-Pro:~ tomer$ python ex.py
 4372: t eliminates the need for introducing a large number of labels in the program."
 ...
 ```
-
-[![Build Status](https://secure.travis-ci.org/r3m0t/backports.lzma.png?branch=cffi)](https://travis-ci.org/r3m0t/backports.lzma)
